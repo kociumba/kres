@@ -71,8 +71,12 @@ CMakeUserPresets.json
 # python
 .venv
 
+# xmake
+.xmake
+
 # build dirs
 cmake-build-*
+build
 
 #misc
 concat.py
