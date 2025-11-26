@@ -1,7 +1,11 @@
 #ifndef KRES_UTILITY_H
 #define KRES_UTILITY_H
 
+#include "main.h"
 #include "types.h"
+
+// the copy buffer size is defined here to allow for overwriting using comp time defines
+#define KRES_COPY_BUFFER 8192
 
 namespace kres {
 
@@ -120,6 +124,15 @@ struct file_reader {
 
     ~file_reader() { close(); }
 
+    kres_err read_byte(std::byte* out) {
+        char c;
+        if (!file.get(c)) {
+            return file.eof() ? KRES_ERROR_EOF : KRES_ERROR_FAILED_IO;
+        }
+        *out = static_cast<std::byte>(c);
+        return KRES_OK;
+    }
+
     kres_err read_u32(uint32_t* out) {
         uint8_t buf[4];
         file.read(reinterpret_cast<char*>(buf), 4);
@@ -189,6 +202,122 @@ struct file_reader {
             file.clear();
             return KRES_ERROR_FAILED_IO;
         }
+        return KRES_OK;
+    }
+};
+
+struct file_writer {
+    std::ofstream file;
+
+    file_writer() {}
+
+    kres_err open(const char* path) {
+        file.open(path, std::ios::binary);
+        if (!file.is_open()) return KRES_ERROR_INVALID_PERMISSIONS;
+        return KRES_OK;
+    }
+
+    void close() {
+        if (file.is_open()) {
+            file.close();
+        }
+    }
+
+    ~file_writer() { close(); }
+
+    kres_err write_byte(std::byte val) {
+        file.put(static_cast<char>(val));
+        if (file.fail()) return KRES_ERROR_FAILED_IO;
+        return KRES_OK;
+    }
+
+    kres_err write_u32(uint32_t val) {
+        val = host_to_le32(val);
+        uint8_t buf[4] = {static_cast<uint8_t>(val & 0xFF),
+                          static_cast<uint8_t>((val >> 8) & 0xFF),
+                          static_cast<uint8_t>((val >> 16) & 0xFF),
+                          static_cast<uint8_t>((val >> 24) & 0xFF)};
+        file.write(reinterpret_cast<const char*>(buf), 4);
+        if (file.fail()) return KRES_ERROR_FAILED_IO;
+        return KRES_OK;
+    }
+
+    kres_err write_u64(uint64_t val) {
+        val = host_to_le64(val);
+        uint8_t buf[8];
+        for (int i = 0; i < 8; i++) {
+            buf[i] = static_cast<uint8_t>((val >> (i * 8)) & 0xFF);
+        }
+        file.write(reinterpret_cast<const char*>(buf), 8);
+        if (file.fail()) return KRES_ERROR_FAILED_IO;
+        return KRES_OK;
+    }
+
+    kres_err write_string(const string& str) {
+        file.write(str.c_str(), str.length());
+        if (file.fail()) return KRES_ERROR_FAILED_IO;
+        file.put('\0');
+        if (file.fail()) return KRES_ERROR_FAILED_IO;
+        return KRES_OK;
+    }
+
+    kres_err write_bytes(const byte_vec& data) {
+        file.write(reinterpret_cast<const char*>(data.data()), data.size());
+        if (file.fail()) return KRES_ERROR_FAILED_IO;
+        return KRES_OK;
+    }
+
+    kres_err write_from_reader(file_reader* reader,
+                               size_t bytes_to_copy,
+                               uint32_t* crc32 = nullptr) {
+        constexpr size_t BUFFER_SIZE = KRES_COPY_BUFFER;
+        uint8_t buffer[BUFFER_SIZE];
+        size_t remaining = bytes_to_copy;
+        uint32_t crc = 0;
+
+        if (crc32) crc = crc32_init();
+
+        while (remaining > 0) {
+            size_t chunk_size = (remaining < BUFFER_SIZE) ? remaining : BUFFER_SIZE;
+            reader->file.read(reinterpret_cast<char*>(buffer), chunk_size);
+            size_t bytes_read = reader->file.gcount();
+            if (bytes_read == 0) {
+                return reader->file.eof() ? KRES_ERROR_EOF : KRES_ERROR_FAILED_IO;
+            }
+
+            file.write(reinterpret_cast<const char*>(buffer), bytes_read);
+            if (file.fail()) return KRES_ERROR_FAILED_IO;
+
+            if (crc32) crc = crc32_update(crc, buffer, bytes_read);
+
+            remaining -= bytes_read;
+            if (bytes_read < chunk_size) break;
+        }
+
+        if (crc32) *crc32 = crc32_final(crc);
+
+        return (remaining == 0) ? KRES_OK : KRES_ERROR_EOF;
+    }
+
+    kres_err tell(size_t* out) {
+        auto pos = file.tellp();
+        if (pos < 0) return KRES_ERROR_FAILED_IO;
+        *out = static_cast<size_t>(pos);
+        return KRES_OK;
+    }
+
+    kres_err seek(size_t new_pos) {
+        file.seekp(static_cast<std::streamoff>(new_pos), std::ios::beg);
+        if (file.fail()) {
+            file.clear();
+            return KRES_ERROR_FAILED_IO;
+        }
+        return KRES_OK;
+    }
+
+    kres_err flush() {
+        file.flush();
+        if (file.fail()) return KRES_ERROR_FAILED_IO;
         return KRES_OK;
     }
 };

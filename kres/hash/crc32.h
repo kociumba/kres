@@ -12,6 +12,10 @@ uint32_t crc32(const void* buf, size_t size);
 
 uint32_t calculate_crc32c(uint32_t crc32c, const unsigned char* buffer, unsigned int length);
 
+uint32_t crc32_init(void);
+uint32_t crc32_update(uint32_t crc, const void* buf, size_t size);
+uint32_t crc32_final(uint32_t crc);
+
 #ifdef __cplusplus
 }
 #endif

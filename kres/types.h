@@ -21,12 +21,15 @@ enum kres_err {
     KRES_ERROR_FAILED_IO,
     KRES_ERROR_EOF,
     KRES_ERROR_INVALID_INPUT_FILE,
+    KRES_ERROR_INVALID_PERMISSIONS,
 };
 
 template <typename T>
 using vec = std::vector<T>;
 template <typename K, typename V>
 using map = std::unordered_map<K, V>;
+template <typename T>
+using list = std::list<T>;
 using id = uint64_t;  // id is an xxhashH3 of the filename, some collisions are bound to happen but
 // they are minimized by the 64 bit width and filepath truncation to the root
 // of the archive

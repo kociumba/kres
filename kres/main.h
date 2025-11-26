@@ -1,10 +1,12 @@
 #ifndef KRES_MAIN_H
 #define KRES_MAIN_H
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 
 #include <xxhash.h>
 #include "hash/crc32.h"
@@ -41,6 +43,9 @@ struct entry {
     uint32_t crc32;
     uint64_t size;
     byte_vec data;
+
+    // utility fields not stored in the format
+    string abs_path;
 };
 
 // the ids and offsets are in this pattern to make access easier here, in memory we store them as:
@@ -55,6 +60,7 @@ struct header {
     byte_vec user_section;  // user section contains arbitrary data the user might want to embed
 
     // utility fields not stored in the format
+    list<id> insert_order;
     map<id, string> filename_table;  // will not be populated if the archive is not fully parsed
 };
 
@@ -113,19 +119,39 @@ kres_err serialize_archive(const archive& arch, byte_vec* out);
 //          NEW IMPROVED API           //
 //-------------------------------------//
 
+inline string sanitize_ar_path(const std::filesystem::path& proposed) {
+    using namespace std::filesystem;
+
+    path p = proposed.lexically_normal();
+    if (p.is_absolute() || p.has_root_path() || p.has_root_name()) return "";
+    if (p.has_parent_path() && p.begin()->string() == "..") return "";
+
+    string normalized = p.string();
+    std::ranges::replace(normalized, '\\', '/');
+
+    return normalized;
+}
+
 // useless in c++, will most likely be used for c bindings
 archive init_archive();
 
 // regenerate the header with new offsets, should be called after each operation that might shift
 // data
-kres_err make_header(archive* ar);
+[[deprecated(
+    "requires all of the archive data to be loaded in memory to generate proper offset "
+    "tables")]] kres_err
+make_header(archive* ar);
 kres_err append_entry(archive* ar, const entry& e);
-kres_err append_entry(archive* ar, const string& filename, bool recurse = false);
+kres_err append_entry(archive* ar,
+                      const string& filename,
+                      const string& ar_path = "",
+                      bool recurse = false);
 kres_err set_user_data(archive* ar, const byte_vec& ud);
 
 // does the same as parse_header, but uses a better reader, which does not load the whole archive
 // into memory
 kres_err preload_archive(archive* ar, const string& filename);
+kres_err render_archive(archive* ar, const string& filename);
 
 }  // namespace kres
 

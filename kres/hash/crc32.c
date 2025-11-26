@@ -110,6 +110,17 @@ uint32_t crc32(const void* buf, size_t size) {
     return crc ^ ~0U;
 }
 
+uint32_t crc32_init(void) { return ~0U; }
+
+uint32_t crc32_update(uint32_t crc, const void* buf, size_t size) {
+    const uint8_t* p = (const uint8_t*)buf;
+    while (size--)
+        crc = crc32_tab[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
+    return crc;
+}
+
+uint32_t crc32_final(uint32_t crc) { return crc ^ ~0U; }
+
 /*
  * A function that calculates the CRC-32 based on the table above is
  * given below for documentation purposes. An equivalent implementation
